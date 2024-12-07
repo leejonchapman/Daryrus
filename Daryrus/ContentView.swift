@@ -131,10 +131,12 @@ struct ContentView: View {
                             files: $files,
                             fileURL: $fileURL,
                             showFileImporter: $showFileImporter,
+                            showSheet: $showFileList, // Pass the binding for sheet visibility
                             audioPlayer: audioPlayer,
                             onDelete: deleteFile
                         )
                     }
+
 
 
                     Button(action: { showSleepTimerSheet = true }) {
@@ -232,10 +234,11 @@ struct ContentView: View {
 
     private func deleteFile(_ url: URL) {
         if let index = files.firstIndex(of: url) {
-            files.remove(at: index)
-            saveFiles()
+            files.remove(at: index) // Remove the file from the list
+            saveFiles() // Persist the updated file list
         }
     }
+
 
     private func saveFiles() {
         let filePaths = files.map { $0.path }
@@ -247,5 +250,4 @@ struct ContentView: View {
             files = savedPaths.compactMap { URL(fileURLWithPath: $0) }
         }
     }
-
 }

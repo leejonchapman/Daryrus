@@ -4,6 +4,7 @@ struct FileListView: View {
     @Binding var files: [URL]
     @Binding var fileURL: URL?
     @Binding var showFileImporter: Bool
+    @Binding var showSheet: Bool
     let audioPlayer: AudioPlayer
     let onDelete: (URL) -> Void
 
@@ -15,11 +16,6 @@ struct FileListView: View {
                         Text(file.lastPathComponent)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                        Spacer()
-                        Button(action: { onDelete(file) }) {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
-                        }
                     }
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -28,8 +24,14 @@ struct FileListView: View {
                         }
                         fileURL = file
                         audioPlayer.startPlayback(fileURL: file)
+
+                        // Delay dismissing the sheet slightly
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            showSheet = false
+                        }
                     }
                 }
+                .onDelete(perform: deleteFile)
             }
             .navigationTitle("Library")
             .toolbar {
@@ -46,6 +48,14 @@ struct FileListView: View {
             ) { result in
                 handleFileImport(result)
             }
+        }
+    }
+
+    private func deleteFile(at offsets: IndexSet) {
+        offsets.forEach { index in
+            let fileToDelete = files[index]
+            files.remove(at: index) // Remove the file from the array
+            onDelete(fileToDelete) // Call the onDelete closure to handle persistence
         }
     }
 
