@@ -54,9 +54,9 @@ class AudioPlayer: ObservableObject {
     }
 
 
-    func setupPlayer(fileURL: URL) {
+    @MainActor
+    func setupPlayer(fileURL: URL) async {
         do {
-            // Files in the app's sandbox do not require security-scoped access
             if !fileURL.path.starts(with: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.path) {
                 guard fileURL.startAccessingSecurityScopedResource() else {
                     print("Failed to access security scoped resource for file: \(fileURL)")
@@ -68,55 +68,73 @@ class AudioPlayer: ObservableObject {
             player = try AVAudioPlayer(contentsOf: fileURL)
             player?.enableRate = true
             player?.prepareToPlay()
-            duration = player?.duration ?? 0
 
-            // Fetch metadata
-            extractMetadata(from: fileURL)
+            duration = player?.duration ?? 0  // Now safe because we're on the main actor
+
+            await extractMetadata(from: fileURL)
         } catch {
             print("Failed to set up audio player: \(error.localizedDescription)")
         }
     }
 
-    private func extractMetadata(from fileURL: URL) {
-        let asset = AVAsset(url: fileURL)
-        let metadata = asset.commonMetadata
+
+
+    private func extractMetadata(from fileURL: URL) async {
+        let asset = AVURLAsset(url: fileURL)
+        guard let metadata = try? await asset.load(.commonMetadata) else {
+            await MainActor.run {
+                self.trackTitle = "Unknown Title"
+                self.trackArtist = "Unknown Artist"
+                self.artwork = nil
+            }
+            return
+        }
 
         // Extract title
+        let title: String
         if let titleItem = metadata.first(where: { $0.commonKey?.rawValue == "title" }),
-           let title = titleItem.value as? String {
-            self.trackTitle = title
+           let loadedTitle = try? await titleItem.load(.value) as? String {
+            title = loadedTitle
         } else {
-            self.trackTitle = "Unknown Title"
+            title = "Unknown Title"
         }
 
         // Extract artist
+        let artist: String
         if let artistItem = metadata.first(where: { $0.commonKey?.rawValue == "artist" }),
-           let artist = artistItem.value as? String {
-            self.trackArtist = artist
+           let loadedArtist = try? await artistItem.load(.value) as? String {
+            artist = loadedArtist
         } else {
-            self.trackArtist = "Unknown Artist"
+            artist = "Unknown Artist"
         }
 
         // Extract artwork
+        let image: UIImage?
         if let artworkItem = metadata.first(where: { $0.commonKey?.rawValue == "artwork" }),
-           let data = artworkItem.value as? Data,
-           let image = UIImage(data: data) {
-            self.artwork = image
+           let data = try? await artworkItem.load(.value) as? Data,
+           let uiImage = UIImage(data: data) {
+            image = uiImage
         } else {
-            self.artwork = nil
+            image = nil
         }
 
-        print("Metadata extracted - Title: \(trackTitle), Artist: \(trackArtist)")
+        // Now update published properties on the main thread
+        await MainActor.run {
+            self.trackTitle = title
+            self.trackArtist = artist
+            self.artwork = image
+        }
     }
 
 
 
 
-    func startPlayback(fileURL: URL? = nil) {
+    @MainActor
+    func startPlayback(fileURL: URL? = nil) async {
         // If a new file URL is provided, set up a new player
         if let fileURL = fileURL {
             if player == nil || player?.url != fileURL {
-                setupPlayer(fileURL: fileURL)
+                await setupPlayer(fileURL: fileURL)
             }
         }
 
@@ -125,11 +143,13 @@ class AudioPlayer: ObservableObject {
         player.enableRate = true
         player.rate = playbackRate
         if player.play() {
-            isPlaying = true
+            isPlaying = true   // Safe now, since we're on the MainActor
             startTimer()
             print("Playback started from time: \(player.currentTime)")
         }
     }
+
+
 
 
     func pausePlayback() {

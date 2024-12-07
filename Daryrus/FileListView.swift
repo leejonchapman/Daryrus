@@ -8,47 +8,18 @@ struct FileListView: View {
     @Binding var showSheet: Bool
     let audioPlayer: AudioPlayer
     let onDelete: (URL) -> Void
-    let saveFiles: () -> Void // Add saveFiles parameter
-
+    let saveFiles: () -> Void
+    
     var body: some View {
         NavigationView {
             List {
                 ForEach(files, id: \.self) { file in
-                    HStack {
-                        // Album art
-                        getAlbumArt(from: file)?
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 40, height: 40)
-                            .cornerRadius(8)
-                            .clipped()
-                            .padding(.trailing, 8)
-
-                        // Title and artist
-                        VStack(alignment: .leading) {
-                            Text(getTrackTitle(from: file))
-                                .bold()
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-
-                            Text(getTrackArtist(from: file))
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if audioPlayer.isPlaying {
-                            audioPlayer.stopPlayback()
-                        }
-                        fileURL = file
-                        audioPlayer.startPlayback(fileURL: file)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            showSheet = false
-                        }
-                    }
+                    FileRowView(
+                        file: file,
+                        audioPlayer: audioPlayer,
+                        fileURL: $fileURL,
+                        showSheet: $showSheet
+                    )
                 }
                 .onDelete(perform: deleteFile)
             }
@@ -58,7 +29,7 @@ struct FileListView: View {
                     Button(action: {
                         // Close the Library sheet before opening the file importer
                         showSheet = false
-
+                        
                         // Open file importer after a small delay
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             showFileImporter = true
@@ -70,7 +41,7 @@ struct FileListView: View {
             }
         }
     }
-
+    
     private func deleteFile(at offsets: IndexSet) {
         offsets.forEach { index in
             let fileToDelete = files[index]
@@ -80,41 +51,120 @@ struct FileListView: View {
                 print("Failed to delete file: \(error.localizedDescription)")
             }
             files.remove(at: index)
-            saveFiles() // Call saveFiles to persist changes
+            saveFiles() // Persist changes
         }
     }
+}
 
-   // Helper method to extract album art
-    private func getAlbumArt(from fileURL: URL) -> Image? {
-        let asset = AVAsset(url: fileURL)
-        for metadata in asset.commonMetadata {
-            if metadata.commonKey == .commonKeyArtwork,
-               let data = metadata.value as? Data,
-               let uiImage = UIImage(data: data) {
-                return Image(uiImage: uiImage)
+// MARK: - Subview for Each File
+struct FileRowView: View {
+    let file: URL
+    let audioPlayer: AudioPlayer
+    @Binding var fileURL: URL?
+    @Binding var showSheet: Bool
+    
+    @State private var albumArt: Image? = nil
+    @State private var trackTitle: String = "Loading..."
+    @State private var trackArtist: String = "Loading..."
+    
+    var body: some View {
+        HStack {
+            albumArt?
+                .resizable()
+                .scaledToFill()
+                .frame(width: 40, height: 40)
+                .cornerRadius(8)
+                .clipped()
+                .padding(.trailing, 8)
+            
+            VStack(alignment: .leading) {
+                Text(trackTitle)
+                    .bold()
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                
+                Text(trackArtist)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
         }
-        return nil // Return nil if no artwork is found
-    }
-
-    // Helper methods to extract MP3 metadata
-    private func getTrackTitle(from fileURL: URL) -> String {
-        let asset = AVAsset(url: fileURL)
-        let metadata = asset.commonMetadata
-        if let titleMetadata = metadata.first(where: { $0.commonKey?.rawValue == "title" }),
-           let title = titleMetadata.value as? String {
-            return title
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if audioPlayer.isPlaying {
+                audioPlayer.stopPlayback()
+            }
+            fileURL = file
+            
+            // Run the async function inside a Task
+            Task {
+                await audioPlayer.startPlayback(fileURL: file)
+            }
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                showSheet = false
+            }
         }
-        return fileURL.lastPathComponent // Fallback to file name if no title is found
-    }
 
-    private func getTrackArtist(from fileURL: URL) -> String {
-        let asset = AVAsset(url: fileURL)
-        let metadata = asset.commonMetadata
-        if let artistMetadata = metadata.first(where: { $0.commonKey?.rawValue == "artist" }),
-           let artist = artistMe tadata.value as? String {
-            return artist
+        .task {
+            // Load metadata asynchronously
+            if let art = await getAlbumArt(from: file) {
+                albumArt = art
+            } else {
+                albumArt = nil
+            }
+            
+            trackTitle = await getTrackTitle(from: file)
+            trackArtist = await getTrackArtist(from: file)
         }
-        return "Unknown Artist" // Fallback if no artist is found
+    }
+    
+    // MARK: - Async Metadata Methods
+    private func getAlbumArt(from fileURL: URL) async -> Image? {
+        let asset = AVURLAsset(url: fileURL)
+        guard let metadata = try? await asset.load(.commonMetadata) else {
+            return nil
+        }
+        
+        for item in metadata {
+            if item.commonKey == .commonKeyArtwork {
+                if let data = try? await item.load(.value) as? Data,
+                   let uiImage = UIImage(data: data) {
+                    return Image(uiImage: uiImage)
+                }
+            }
+        }
+        return nil
+    }
+    
+    private func getTrackTitle(from fileURL: URL) async -> String {
+        let asset = AVURLAsset(url: fileURL)
+        guard let metadata = try? await asset.load(.commonMetadata) else {
+            return fileURL.lastPathComponent
+        }
+        
+        if let titleItem = metadata.first(where: { $0.commonKey?.rawValue == "title" }) {
+            if let title = try? await titleItem.load(.value) as? String {
+                return title
+            }
+        }
+        
+        return fileURL.lastPathComponent
+    }
+    
+    private func getTrackArtist(from fileURL: URL) async -> String {
+        let asset = AVURLAsset(url: fileURL)
+        guard let metadata = try? await asset.load(.commonMetadata) else {
+            return "Unknown Artist"
+        }
+        
+        if let artistItem = metadata.first(where: { $0.commonKey?.rawValue == "artist" }) {
+            if let artist = try? await artistItem.load(.value) as? String {
+                return artist
+            }
+        }
+        
+        return "Unknown Artist"
     }
 }

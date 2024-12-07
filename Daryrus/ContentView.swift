@@ -88,7 +88,9 @@ struct ContentView: View {
                             if audioPlayer.isPlaying {
                                 audioPlayer.pausePlayback()
                             } else if let url = fileURL {
-                                audioPlayer.startPlayback(fileURL: url)
+                                Task {
+                                    await audioPlayer.startPlayback(fileURL: url)
+                                }
                             }
                         }) {
                             Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
