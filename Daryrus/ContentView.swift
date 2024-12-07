@@ -107,6 +107,14 @@ struct ContentView: View {
                     .padding(.horizontal)
                 }
 
+                // Sleep Timer Display
+                if remainingTime > 0 {
+                    Text("Timer: \(timeString(from: remainingTime))")
+                        .font(.footnote)
+                        .padding(.bottom, 5)
+                        .foregroundColor(.red)
+                }
+
                 Spacer()
 
                 HStack {
@@ -225,15 +233,19 @@ struct ContentView: View {
 
     private func startSleepTimer(duration: TimeInterval) {
         sleepTimer?.invalidate()
+        sleepTimerDuration = duration
         remainingTime = duration
+
         sleepTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            if remainingTime > 0 {
-                remainingTime -= 1
-            } else {
-                audioPlayer.pausePlayback()
-                sleepTimer?.invalidate()
-                sleepTimer = nil
-                sleepTimerDuration = 0
+            DispatchQueue.main.async {
+                if remainingTime > 0 {
+                    remainingTime -= 1
+                } else {
+                    audioPlayer.pausePlayback()
+                    sleepTimer?.invalidate()
+                    sleepTimer = nil
+                    sleepTimerDuration = 0
+                }
             }
         }
     }
