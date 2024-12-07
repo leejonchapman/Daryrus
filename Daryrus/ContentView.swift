@@ -55,7 +55,6 @@ struct ContentView: View {
 
                 // Playback Controls
                 VStack {
-                    // Slider
                     Slider(
                         value: Binding(
                             get: { audioPlayer.currentTime },
@@ -77,7 +76,6 @@ struct ContentView: View {
                     }
                     .padding(.horizontal)
 
-                    // Playback and Skip Buttons
                     HStack {
                         Button(action: { audioPlayer.skipBackward() }) {
                             Image(systemName: "gobackward.10")
@@ -107,16 +105,8 @@ struct ContentView: View {
                     .padding(.horizontal)
                 }
 
-                // Sleep Timer Display
-                if sleepTimerDuration > 0 {
-                    Text("Time Remaining: \(timeString(from: remainingTime))")
-                        .font(.headline)
-                        .padding()
-                }
-
                 Spacer()
 
-                // Library and Sleep Timer Buttons
                 HStack {
                     Button(action: { showFileList = true }) {
                         Text("Library")
@@ -131,12 +121,12 @@ struct ContentView: View {
                             files: $files,
                             fileURL: $fileURL,
                             showFileImporter: $showFileImporter,
-                            showSheet: $showFileList, // Pass the binding for sheet visibility
+                            showSheet: $showFileList,
                             audioPlayer: audioPlayer,
-                            onDelete: deleteFile
+                            onDelete: deleteFile,
+                            saveFiles: saveFiles // Pass saveFiles as a closure
                         )
                     }
-
 
 
                     Button(action: { showSleepTimerSheet = true }) {
@@ -171,38 +161,65 @@ struct ContentView: View {
             }
         }
     }
+
     private func handleFileImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
             if let firstURL = urls.first {
+                // Start security-scoped access
                 guard firstURL.startAccessingSecurityScopedResource() else {
                     print("Failed to access security scoped resource for file: \(firstURL)")
                     return
                 }
-                defer { firstURL.stopAccessingSecurityScopedResource() }
+                defer { firstURL.stopAccessingSecurityScopedResource() } // Stop access when done
 
-                if !files.contains(firstURL) {
-                    files.append(firstURL)
-                    saveFiles()
+                // Destination in the app's sandbox (Documents folder)
+                let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                let destinationURL = documentsDirectory.appendingPathComponent(firstURL.lastPathComponent)
+
+                do {
+                    // Copy the file only if it doesn't already exist
+                    if !FileManager.default.fileExists(atPath: destinationURL.path) {
+                        try FileManager.default.copyItem(at: firstURL, to: destinationURL)
+                    }
+                    // Add the file's sandboxed URL to the files array
+                    files.append(destinationURL)
+                    saveFiles() // Persist the file paths
+                    print("File imported successfully: \(destinationURL.lastPathComponent)")
+                } catch {
+                    print("Failed to copy file to sandbox: \(error.localizedDescription)")
                 }
-
-                fileURL = firstURL
-                audioPlayer.setupPlayer(fileURL: firstURL)
             }
         case .failure(let error):
-            print("Failed to import file: \(error.localizedDescription)")
-        }
-    }
-    
-    private func openFileImporter() {
-        // Close the Library view first, then open the file picker
-        showFileList = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            showFileImporter = true
+            print("File import failed: \(error.localizedDescription)")
         }
     }
 
-    
+
+    private func saveFiles() {
+        let filePaths = files.map { $0.path }
+        UserDefaults.standard.set(filePaths, forKey: "savedFiles")
+    }
+
+    private func loadFiles() {
+        if let savedPaths = UserDefaults.standard.array(forKey: "savedFiles") as? [String] {
+            files = savedPaths.map { URL(fileURLWithPath: $0) }
+        } else {
+            files = []
+        }
+    }
+
+    private func deleteFile(_ url: URL) {
+        if let index = files.firstIndex(of: url) {
+            files.remove(at: index)
+            saveFiles()
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch {
+                print("Failed to delete file: \(error.localizedDescription)")
+            }
+        }
+    }
 
     private func timeString(from time: TimeInterval) -> String {
         let minutes = Int(time) / 60
@@ -230,24 +247,5 @@ struct ContentView: View {
         sleepTimer = nil
         sleepTimerDuration = 0
         remainingTime = 0
-    }
-
-    private func deleteFile(_ url: URL) {
-        if let index = files.firstIndex(of: url) {
-            files.remove(at: index) // Remove the file from the list
-            saveFiles() // Persist the updated file list
-        }
-    }
-
-
-    private func saveFiles() {
-        let filePaths = files.map { $0.path }
-        UserDefaults.standard.set(filePaths, forKey: "savedFiles")
-    }
-
-    private func loadFiles() {
-        if let savedPaths = UserDefaults.standard.array(forKey: "savedFiles") as? [String] {
-            files = savedPaths.compactMap { URL(fileURLWithPath: $0) }
-        }
     }
 }

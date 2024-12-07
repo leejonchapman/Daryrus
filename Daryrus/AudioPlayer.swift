@@ -56,11 +56,14 @@ class AudioPlayer: ObservableObject {
 
     func setupPlayer(fileURL: URL) {
         do {
-            guard fileURL.startAccessingSecurityScopedResource() else {
-                print("Failed to access security scoped resource for file: \(fileURL)")
-                return
+            // Files in the app's sandbox do not require security-scoped access
+            if !fileURL.path.starts(with: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.path) {
+                guard fileURL.startAccessingSecurityScopedResource() else {
+                    print("Failed to access security scoped resource for file: \(fileURL)")
+                    return
+                }
+                do { fileURL.stopAccessingSecurityScopedResource() }
             }
-            defer { fileURL.stopAccessingSecurityScopedResource() }
 
             player = try AVAudioPlayer(contentsOf: fileURL)
             player?.enableRate = true
@@ -71,6 +74,8 @@ class AudioPlayer: ObservableObject {
             print("Failed to set up audio player: \(error.localizedDescription)")
         }
     }
+
+
 
     func startPlayback(fileURL: URL? = nil) {
         if isPlaying { pausePlayback() }

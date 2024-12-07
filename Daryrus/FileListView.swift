@@ -7,6 +7,7 @@ struct FileListView: View {
     @Binding var showSheet: Bool
     let audioPlayer: AudioPlayer
     let onDelete: (URL) -> Void
+    let saveFiles: () -> Void // Add saveFiles parameter
 
     var body: some View {
         NavigationView {
@@ -24,8 +25,6 @@ struct FileListView: View {
                         }
                         fileURL = file
                         audioPlayer.startPlayback(fileURL: file)
-
-                        // Delay dismissing the sheet slightly
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                             showSheet = false
                         }
@@ -36,17 +35,18 @@ struct FileListView: View {
             .navigationTitle("Library")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showFileImporter = true }) {
+                    Button(action: {
+                        // Close the Library sheet before opening the file importer
+                        showSheet = false
+
+                        // Open file importer after a small delay
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            showFileImporter = true
+                        }
+                    }) {
                         Image(systemName: "plus")
                     }
                 }
-            }
-            .fileImporter(
-                isPresented: $showFileImporter,
-                allowedContentTypes: [.audio, .mp3],
-                allowsMultipleSelection: false
-            ) { result in
-                handleFileImport(result)
             }
         }
     }
@@ -54,33 +54,13 @@ struct FileListView: View {
     private func deleteFile(at offsets: IndexSet) {
         offsets.forEach { index in
             let fileToDelete = files[index]
-            files.remove(at: index) // Remove the file from the array
-            onDelete(fileToDelete) // Call the onDelete closure to handle persistence
-        }
-    }
-
-    private func handleFileImport(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            if let firstURL = urls.first {
-                guard firstURL.startAccessingSecurityScopedResource() else {
-                    print("Failed to access security scoped resource for file: \(firstURL)")
-                    return
-                }
-                defer { firstURL.stopAccessingSecurityScopedResource() }
-
-                if !files.contains(firstURL) {
-                    files.append(firstURL)
-                    saveFiles()
-                }
+            do {
+                try FileManager.default.removeItem(at: fileToDelete)
+            } catch {
+                print("Failed to delete file: \(error.localizedDescription)")
             }
-        case .failure(let error):
-            print("Failed to import file: \(error.localizedDescription)")
+            files.remove(at: index)
+            saveFiles() // Call saveFiles to persist changes
         }
-    }
-
-    private func saveFiles() {
-        let filePaths = files.map { $0.path }
-        UserDefaults.standard.set(filePaths, forKey: "savedFiles")
     }
 }
