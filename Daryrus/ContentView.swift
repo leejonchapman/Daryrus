@@ -124,10 +124,9 @@ struct ContentView: View {
                             showSheet: $showFileList,
                             audioPlayer: audioPlayer,
                             onDelete: deleteFile,
-                            saveFiles: saveFiles // Pass saveFiles as a closure
+                            saveFiles: saveFiles
                         )
                     }
-
 
                     Button(action: { showSleepTimerSheet = true }) {
                         Text("Sleep Timer")
@@ -171,21 +170,17 @@ struct ContentView: View {
                     print("Failed to access security scoped resource for file: \(firstURL)")
                     return
                 }
-                defer { firstURL.stopAccessingSecurityScopedResource() } // Stop access when done
+                defer { firstURL.stopAccessingSecurityScopedResource() }
 
-                // Destination in the app's sandbox (Documents folder)
                 let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
                 let destinationURL = documentsDirectory.appendingPathComponent(firstURL.lastPathComponent)
 
                 do {
-                    // Copy the file only if it doesn't already exist
                     if !FileManager.default.fileExists(atPath: destinationURL.path) {
                         try FileManager.default.copyItem(at: firstURL, to: destinationURL)
                     }
-                    // Add the file's sandboxed URL to the files array
                     files.append(destinationURL)
-                    saveFiles() // Persist the file paths
-                    print("File imported successfully: \(destinationURL.lastPathComponent)")
+                    saveFiles()
                 } catch {
                     print("Failed to copy file to sandbox: \(error.localizedDescription)")
                 }
@@ -194,7 +189,6 @@ struct ContentView: View {
             print("File import failed: \(error.localizedDescription)")
         }
     }
-
 
     private func saveFiles() {
         let filePaths = files.map { $0.path }

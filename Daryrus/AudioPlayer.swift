@@ -8,8 +8,8 @@ class AudioPlayer: ObservableObject {
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
     @Published var playbackRate: Float = 1.0
-    @Published var trackTitle: String = "Unknown Title"
-    @Published var trackArtist: String = "Unknown Artist"
+    @Published var trackTitle: String = "Title"
+    @Published var trackArtist: String = "Artist"
     @Published var artwork: UIImage? = nil
 
     private var timer: Timer?
@@ -62,32 +62,75 @@ class AudioPlayer: ObservableObject {
                     print("Failed to access security scoped resource for file: \(fileURL)")
                     return
                 }
-                do { fileURL.stopAccessingSecurityScopedResource() }
+                defer { fileURL.stopAccessingSecurityScopedResource() }
             }
 
             player = try AVAudioPlayer(contentsOf: fileURL)
             player?.enableRate = true
             player?.prepareToPlay()
             duration = player?.duration ?? 0
-            currentTime = 0
+
+            // Fetch metadata
+            extractMetadata(from: fileURL)
         } catch {
             print("Failed to set up audio player: \(error.localizedDescription)")
         }
     }
 
+    private func extractMetadata(from fileURL: URL) {
+        let asset = AVAsset(url: fileURL)
+        let metadata = asset.commonMetadata
+
+        // Extract title
+        if let titleItem = metadata.first(where: { $0.commonKey?.rawValue == "title" }),
+           let title = titleItem.value as? String {
+            self.trackTitle = title
+        } else {
+            self.trackTitle = "Unknown Title"
+        }
+
+        // Extract artist
+        if let artistItem = metadata.first(where: { $0.commonKey?.rawValue == "artist" }),
+           let artist = artistItem.value as? String {
+            self.trackArtist = artist
+        } else {
+            self.trackArtist = "Unknown Artist"
+        }
+
+        // Extract artwork
+        if let artworkItem = metadata.first(where: { $0.commonKey?.rawValue == "artwork" }),
+           let data = artworkItem.value as? Data,
+           let image = UIImage(data: data) {
+            self.artwork = image
+        } else {
+            self.artwork = nil
+        }
+
+        print("Metadata extracted - Title: \(trackTitle), Artist: \(trackArtist)")
+    }
+
+
 
 
     func startPlayback(fileURL: URL? = nil) {
-        if isPlaying { pausePlayback() }
-        if let fileURL = fileURL { setupPlayer(fileURL: fileURL) }
+        // If a new file URL is provided, set up a new player
+        if let fileURL = fileURL {
+            if player == nil || player?.url != fileURL {
+                setupPlayer(fileURL: fileURL)
+            }
+        }
+
+        // Resume playback from the current position
         guard let player = player else { return }
         player.enableRate = true
         player.rate = playbackRate
         if player.play() {
             isPlaying = true
             startTimer()
+            print("Playback started from time: \(player.currentTime)")
         }
     }
+
 
     func pausePlayback() {
         player?.pause()
