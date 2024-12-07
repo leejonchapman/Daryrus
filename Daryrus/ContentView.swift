@@ -247,4 +247,5 @@ struct ContentView: View {
             files = savedPaths.compactMap { URL(fileURLWithPath: $0) }
         }
     }
+
 }
