@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var sleepTimerDuration: TimeInterval = 0
     @State private var remainingTime: TimeInterval = 0
     @State private var sleepTimer: Timer? = nil
+    @State private var playbackSpeed: Float = 1.0 // Initial playback speed (normal)
 
     var body: some View {
         NavigationView {
@@ -105,6 +106,24 @@ struct ContentView: View {
                         }
                     }
                     .padding(.horizontal)
+
+                    // Playback Speed Slider
+                    VStack {
+                        Text("Playback Speed: \(Int(playbackSpeed * 100))%")
+                            .font(.footnote)
+                            .padding(.top)
+
+                        Slider(
+                            value: $playbackSpeed,
+                            in: 0.5...1.5, // Range: 50% to 150%
+                            step: 0.1,
+                            onEditingChanged: { _ in
+                                adjustPlaybackSpeed()
+                            }
+                        )
+                        .accentColor(.green)
+                        .padding([.horizontal, .top])
+                    }
                 }
 
                 // Sleep Timer Display
@@ -169,6 +188,16 @@ struct ContentView: View {
                 loadFiles()
             }
         }
+    }
+
+    private func adjustPlaybackSpeed() {
+        // Update the audio player's playback rate
+        audioPlayer.playbackRate = playbackSpeed
+        audioPlayer.player?.rate = playbackSpeed
+
+        // Trigger haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
     }
 
     private func handleFileImport(_ result: Result<[URL], Error>) {
